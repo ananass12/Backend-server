@@ -1,0 +1,3 @@
+[submodule "examples/Android"]
+	path = examples/Android
+	url = https://github.com/ananass12/MyApp.git
