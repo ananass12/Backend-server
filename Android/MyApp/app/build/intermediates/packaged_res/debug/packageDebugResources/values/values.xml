@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="bright_pink">#E91E63</color>
+    <color name="gray">#757575</color>
+    <color name="light_pink">#F2AEC2</color>
+    <color name="white">#FFFFFFFF</color>
+    <string name="app_name">MyApp</string>
+    <string name="back">Назад</string>
+    <string name="del_text">Разделить</string>
+    <string name="minus_text">Вычесть</string>
+    <string name="name1">Приложение</string>
+    <string name="name2">Калькулятор</string>
+    <string name="name3">MP3 player</string>
+    <string name="number1_hint">Введите первое число</string>
+    <string name="number2_hint">Введите второе число</string>
+    <string name="plus_text">Сложить</string>
+    <string name="result_hint">Результат</string>
+    <string name="umnoj_text">Перемножить</string>
+    <style name="Base.Theme.MyApp" parent="Theme.Material3.DayNight.NoActionBar">
+        
+        
+    </style>
+    <style name="Theme.MyApp" parent="Base.Theme.MyApp"/>
+</resources>
