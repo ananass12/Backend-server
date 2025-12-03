@@ -1,106 +1,134 @@
 import zmq
 import os
-import traceback
 import json
+import traceback
 from datetime import datetime
+import psycopg2
+
+# Подключение к БД
+conn = psycopg2.connect(
+    host="localhost",
+    port=5432,
+    database="database",
+    user="postgres",
+    password="12345"
+)
+cursor = conn.cursor()
+
+def save_to_postgres(packet_number, timestamp, data):
+    try:
+        location_data = data.get("Location")
+        if not location_data:
+            return
+
+        cell_info_list = data.get("CellInfo", [])
+
+        for raw_ci in cell_info_list:
+            ci = raw_ci.get("data", raw_ci)
+
+            # Пропускаем странные записи
+            if ci.get("MCC") == 2147483647 or ci.get("RSRP") == 2147483647:
+                continue
+
+            network_type = ci.get("type", "UNK")[:3]
+
+            cursor.execute("""
+                INSERT INTO database
+                (Lat, Lon, Alt, Timestamp, type, MCC, MNC, PCI, TAC, CI, RSRP, ASU)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                float(location_data.get("Latitude", 0)),
+                float(location_data.get("Longitude", 0)),
+                float(location_data.get("Altitude", 0)),
+                location_data.get("Timestamp", datetime.now().timestamp()),
+                network_type,
+                int(ci.get("MCC", 0)),
+                int(ci.get("MNC", 0)),
+                int(ci.get("PCI", 0)),
+                int(ci.get("TAC", 0)),
+                int(ci.get("CI", 0)),
+                int(ci.get("RSRP", 0)),
+                int(ci.get("ASU", 0))
+            ))
+
+        conn.commit()
+
+    except Exception as exc:
+        print(f"[ERROR] Ошибка записи в базу: {exc}")
+        traceback.print_exc()
 
 def run_server():
     context = zmq.Context()
-
     try:
         socket = context.socket(zmq.REP)
         socket.bind("tcp://0.0.0.0:2222")
         print("Сервер запущен на tcp://0.0.0.0:2222")
-        print("Ожидание подключения от клиента...")
     except Exception as e:
-        print("Ошибка при запуске сервера:", str(e))
+        print(f"[ERROR] Ошибка запуска сервера: {e}")
         return
 
     packet_count = 0
     logs_dir = "logs"
-    os.makedirs(logs_dir, exist_ok=True)   # создаём папку для логов
+    os.makedirs(logs_dir, exist_ok=True)
+    file_path = os.path.join(logs_dir, "received_data.json")
 
-    def current_log_filename():
-        today = datetime.now().strftime("%d-%m-%Y")
-        return os.path.join(logs_dir, f"received_{today}.json")
-
-    def save_to_json_file(data):
-        filename = current_log_filename()
-        try:
-            # Создаем объект для записи
-            data_with_timestamp = {
-                "timestamp": datetime.now().isoformat(),
-                "packet_number": packet_count,
-                "data": data
-            }
-            
-            # Записываем в файл, каждая строка - отдельный JSON объект
-            with open(filename, "a", encoding="utf-8") as f:
-                json.dump(data_with_timestamp, f, ensure_ascii=False)
-                f.write("\n")  # Добавляем перевод строки
-            
-            return True
-        except Exception as e:
-            print(f"Ошибка сохранения в JSON файл: {e}")
-            return False
+    print("Ожидание сообщений...")
 
     while True:
         try:
-            print("\nОжидание сообщения от клиента...")
-            
-            # Получаем сообщение (байты)
             message_bytes = socket.recv()
             packet_count += 1
-            timestamp = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-            
-            # Пробуем декодировать и распарсить JSON
-            try:
-                message_str = message_bytes.decode('utf-8')
-                data = json.loads(message_str)
-                
-                #print(f"\n[{timestamp}] Пакет #{packet_count}:")
-                #print("Полученные данные:")
-                #print(json.dumps(data, indent=2, ensure_ascii=False))
-                
-                # Сохраняем в файл
-                if save_to_json_file(data):
-                    print(f"Данные сохранены в файл")
-                else:
-                    print("Ошибка сохранения данных")
-                    
-            except json.JSONDecodeError as e:
-                print(f"\n[{timestamp}] Пакет #{packet_count}: Ошибка декодирования JSON")
-                print(f"Полученное сообщение: {message_str}")
-                print(f"Ошибка: {e}")
-                
-                # Сохраняем сырые данные в текстовый файл
-                filename_raw = current_log_filename().replace('.json', '_raw.txt')
-                with open(filename_raw, "a", encoding="utf-8") as f:
-                    f.write(f"{timestamp} - Пакет #{packet_count}:\n")
-                    f.write(message_str)
-                    f.write("\n\n")
-                
-            except UnicodeDecodeError as e:
-                print(f"\n[{timestamp}] Пакет #{packet_count}: Ошибка декодирования UTF-8")
-                print(f"Полученные байты: {message_bytes}")
-                print(f"Ошибка: {e}")
 
-            # Отправляем ответ клиенту
-            reply = f"Данные получены успешно! Пакет #{packet_count}"
-            socket.send_string(reply)
-            print(f"Отправлен ответ клиенту: {reply}")
+            try:
+                message_str = message_bytes.decode("utf-8").strip()
+                if not message_str:
+                    socket.send_string("EMPTY PACKET")
+                    continue
+
+                data = json.loads(message_str)
+
+                android_timestamp = data.get("Location", {}).get("Timestamp", datetime.now().timestamp())
+
+                # Сохраняем в JSON файл
+                full_json = {
+                    "timestamp": android_timestamp,
+                    "packet_number": packet_count,
+                    "data": data
+                }
+                with open(file_path, "a", encoding="utf-8") as f:
+                    json.dump(full_json, f, ensure_ascii=False)
+                    f.write("\n")
+
+                print(f"[{packet_count}] Данные записаны в JSON")
+
+                # Сохраняем в базу
+                save_to_postgres(packet_count, android_timestamp, data)
+                print(f"[{packet_count}] Данные отправлены в PostgreSQL")
+
+                socket.send_string(f"OK packet #{packet_count}")
+
+            except json.JSONDecodeError as e:
+                print(f"[{packet_count}] Ошибка JSON: {e}")
+                socket.send_string("JSON ERROR")
+
+            except Exception as e:
+                print(f"[{packet_count}] Ошибка обработки пакета:", e)
+                traceback.print_exc()
+                socket.send_string("SERVER ERROR")
 
         except KeyboardInterrupt:
-            print("\nСервер остановлен вручную")
+            print("Сервер остановлен вручную")
             break
+
         except Exception as e:
-            print("Ошибка во время обработки сообщения:")
+            print(f"Критическая ошибка: {e}")
             traceback.print_exc()
             continue
 
     socket.close()
     context.term()
-    print("Сервер завершил работу")
+    cursor.close()
+    conn.close()
 
 if __name__ == "__main__":
     run_server()
