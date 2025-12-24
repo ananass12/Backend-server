@@ -26,10 +26,6 @@ def save_to_postgres(packet_number, timestamp, data):
         for raw_ci in cell_info_list:
             ci = raw_ci.get("data", raw_ci)
 
-            # Пропускаем странные записи
-            if ci.get("MCC") == 2147483647 or ci.get("RSRP") == 2147483647:
-                continue
-
             network_type = ci.get("type", "UNK")[:3]
 
             cursor.execute("""

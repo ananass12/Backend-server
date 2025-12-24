@@ -35,9 +35,6 @@ with open("received_data.json", "r", encoding="utf-8") as file:
                 else:
                     ci = raw_ci
 
-                if ci.get('MCC') == 2147483647 or ci.get('RSRP') == 2147483647:
-                    continue
-
                 network_type = ci.get('type', 'UNK')[:3]
 
                 cursor.execute("""
